@@ -1,5 +1,6 @@
 All uses of the library start with creating a `Streamer` object.
-```
+```python
+import multitables
 stream = multitables.Streamer(filename="/path/to/h5/file", **kw_args)
 ```
 Additional flags to pytables' `open_file` function can be passed through the optional keyword arguments.
@@ -8,7 +9,7 @@ Additional flags to pytables' `open_file` function can be passed through the opt
 _multitables_ allows low level access to the internal queue buffer. 
 This access is synchronised with a guard object. 
 When the guard object is created, an element of the buffer is reserved until the guard is released.
-```
+```python
 queue = stream.get_queue(
     path='/h5/path/', # Path to dataset within the H5file.
     n_procs=4,        # Number of processes to launch for parallel reads. Defaults to 4.
@@ -34,7 +35,7 @@ If the data need to be saved for later use, make a copy of it with `block.copy()
 
 ## Iterator
 A convenience iterator is supplied to make loop termination easier.
-```
+```python
 for guard in queue.iter():
     with guard as block:
         do_something(block)
@@ -44,14 +45,14 @@ for guard in queue.iter():
 In all the previous cases, if the supplied `read_size` does not evenly divide the dataset 
 then the _remainder_ elements will not be read.
 If needed, these remainder elements can be accessed using the following method
-```
+```python
 last_block = stream.get_remainder(path, queue.block_size)
 ```
 
 ## Cyclic access
 When the cyclic mode is enabled, the readers will wrap around the end of the dataset.
 The check for the end of the queue is no longer needed in this case.
-```
+```python
 while True:
     with queue.get() as block: 
         do_something(block) 
@@ -67,7 +68,7 @@ The generator provides higher level access to the streamed data.
 Elements from the dataset are returned one row at a time.
 These rows belong to a copied array, so they can be safely stored for later use.
 The remainder elements are also included in this mode.
-```
+```python
 gen = stream.get_generator(path, n_procs, read_ahead, cyclic, block_size)
 
 for row in gen:
@@ -75,7 +76,7 @@ for row in gen:
 ```
 
 This is supposed to be in analogy to
-```
+```python
 dataset = h5_file.get_node(path)
 
 for row in dataset:
