@@ -189,6 +189,12 @@ class MultiTablesTest(unittest.TestCase):
 
         queue.close()
 
+    def test_quickstart(self):
+        do_something = lambda x: x
+        stream = multitables.Streamer(filename=self.test_filename)
+        for row in stream.get_generator(path=self.test_array_path):
+            do_something(row)
+
     def test_howto(self):
         kw_args = {}
         stream = multitables.Streamer(filename=self.test_filename, **kw_args)

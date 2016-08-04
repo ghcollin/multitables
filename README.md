@@ -24,7 +24,7 @@ The package is compatible with the latest versions of python 2 and 3.
 
 # Quick start
 ```
-stream = multitables.Streamer(filename='/path/to/h5/file)
+stream = multitables.Streamer(filename='/path/to/h5/file')
 for row in stream.get_generator(path='/internal/h5/path'):
     do_something(row)
 ```
