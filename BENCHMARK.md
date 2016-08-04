@@ -1,4 +1,4 @@
-These benchmarks have been performed with `multitables_benchmark.py`. 
+These benchmarks have been performed with [multitables_benchmark.py](https://github.com/ghcollin/multitables/blob/master/multitables_benchmark.py). 
 Two compression methods are benchmarked, along with three different storage devices.
 
 Note that the data used are random numbers from a normal distribution, which is not compressible.

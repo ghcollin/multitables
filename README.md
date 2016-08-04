@@ -8,9 +8,13 @@ Performance gains of at least 2x can be achieved when reading from an SSD.
 
 # Licence
 This software is distributed under the MIT licence. 
-See the `LICENSE.txt` file for details.
+See the [LICENSE.txt](https://github.com/ghcollin/multitables/blob/master/LICENSE.txt) file for details.
 
 # Installation
+```
+pip install git+https://github.com/ghcollin/multitables.git
+```
+or download and run
 ```
 python setup.py install
 ```
@@ -26,10 +30,10 @@ for row in stream.get_generator(path='/internal/h5/path'):
 ```
 
 # Examples
-See the unit tests for complete examples.
+See the [unit tests](https://github.com/ghcollin/multitables/blob/master/multitables_test.py) for complete examples.
 
 # How To
-Documentation on how to use the library can be found in HOWTO.md.
+Documentation on how to use the library can be found in [HOWTO.md](https://github.com/ghcollin/multitables/blob/master/HOWTO.md).
 
 # Benchmark
-A benchmark suite is included. Results are shown in BENCHMARK.md.
+A benchmark suite is included. Results are shown in [BENCHMARK.md](https://github.com/ghcollin/multitables/blob/master/BENCHMARK.md).
