@@ -1,8 +1,12 @@
-High performance concurrent reading of HDF5 files using pytables. 
-This library uses multiprocessing and shared memory to safely perform parallel reads.
+`multitables` is a python library designed for high speed access to HDF5 files.
+Access to HDF5 is provided by the PyTables library (`tables`).
+Multiple processes are launched to read a HDF5 in parallel, allowing concurrent decompression.
+Data is streamed back to the invoker by use of shared memory space, removing the usual multiprocessing
+communication overhead.
 
-Blocks of data are streamed to the user. 
-There is **_no guarantee_** on the ordering of the blocks.
+The data is organised by rows of an array (elements of the outer-most dimension), and groups of these rows form blocks.
+Due to the concurrent nature of the library, there is **_no guarantee_** on the ordering of the rows and/or blocks
+returned to the user. They are returned as they become available.
 
 Performance gains of at least 2x can be achieved when reading from an SSD. 
 
@@ -32,9 +36,3 @@ for row in stream.get_generator(path='/internal/h5/path'):
 
 # Examples
 See the [unit tests](https://github.com/ghcollin/multitables/blob/master/multitables_test.py) for complete examples.
-
-# How To
-Documentation on how to use the library can be found in [HOWTO.md](https://github.com/ghcollin/multitables/blob/master/HOWTO.md).
-
-# Benchmark
-A benchmark suite is included. Results are shown in [BENCHMARK.md](https://github.com/ghcollin/multitables/blob/master/BENCHMARK.md).

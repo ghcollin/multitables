@@ -22,6 +22,7 @@ class BarrierImpl:
     def __init__(self, n_procs):
         """
         Create a barrier that waits for n_procs processes.
+
         :param n_procs: The number of processes to wait for.
         """
         self.n_procs = n_procs
@@ -48,6 +49,7 @@ class Barrier:
     def __init__(self, n_procs):
         """
         Create a self re-setting barrier that waits for n_procs processes.
+
         :param n_procs: The number of processes to wait for.
         """
         self.barrier_A, self.barrier_B = BarrierImpl(n_procs), BarrierImpl(n_procs)
@@ -66,6 +68,7 @@ class SharedCircBuf:
     def __init__(self, queue_size, ary_template):
         """
         Create the circular buffer. An array template must be passed to determine the size of the buffer elements.
+
         :param queue_size: Number of arrays to use as buffer elements.
         :param ary_template: Buffer elements match this array in shape and data-type.
         """
@@ -98,6 +101,7 @@ class SharedCircBuf:
             The guard object returns ary, and once the guard ends the value of idx is put into queue.
             Used to put an element index representing a token back into the buffer queues once operations on the
             element are complete.
+
             :param queue: The queue to be populated when the guard ends.
             :param idx: The value to put into the queue.
             :param ary: Value to return in the with statement.
@@ -119,6 +123,7 @@ class SharedCircBuf:
         """
         Convenience method to put in_ary into the buffer.
         Blocks until there is room to write into the buffer.
+
         :param in_ary: The array to place into the buffer.
         :return:
         """
@@ -129,6 +134,7 @@ class SharedCircBuf:
         """
         Allows direct access to the buffer element.
         Blocks until there is room to write into the buffer.
+
         :return: A guard object that returns the buffer element.
         """
         # Get the next element that can be written to.
@@ -145,6 +151,7 @@ class SharedCircBuf:
         """
         Convenience method to get a copy of an array in the buffer.
         Blocks until there is data to be read.
+
         :return: A copy of the next available array.
         """
         with self.get_direct() as ary:
@@ -155,6 +162,7 @@ class SharedCircBuf:
         """
         Allows direct access to the buffer element.
         Blocks until there is data that can be read.
+
         :return: A guard object that returns the buffer element.
         """
         # Get the next element that can be written.
@@ -179,6 +187,7 @@ class Streamer:
         """
         An object for streaming data from filename. Additional key words arguments can be passed to the constructor.
         These arguments will be passed on to the open_file function from PyTables.
+
         :param filename: The HDF5 file to read from.
         :param kw_args: Additional options for opening the HDF5 file.
         """
@@ -186,9 +195,10 @@ class Streamer:
         self.h5_kw_args = kw_args
 
     @staticmethod
-    def read_process(self, path, read_size, cbuf, stop, barrier, cyclic, offset, read_skip):
+    def __read_process(self, path, read_size, cbuf, stop, barrier, cyclic, offset, read_skip):
         """
         Main function for the processes that read from the HDF5 file.
+
         :param self: A reference to the streamer object that created these processes.
         :param path: The HDF5 path to the node to be read from.
         :param read_size: The length of the block along the outer dimension to read.
@@ -226,9 +236,10 @@ class Streamer:
                 if i + read_size > len(ary):
                     break
 
-    def get_batch(self, path, length, last=False):
+    def __get_batch(self, path, length, last=False):
         """
         Get a block of data from the node at path.
+
         :param path: The path to the node to read from.
         :param length: The length along the outer dimension to read.
         :param last: True if the remainder elements should be read.
@@ -263,11 +274,12 @@ class Streamer:
     def get_remainder(self, path, block_size):
         """
         Get the remainder elements. These elements will not be read in the direct queue access cyclic=False mode.
+
         :param path: The HDF5 path to the dataset to be read.
         :param block_size: The block size is used to calculate which elements will remain.
         :return: A copy of the remainder elements as a numpy array.
         """
-        return self.get_batch(path, length=block_size, last=True)
+        return self.__get_batch(path, length=block_size, last=True)
 
     class Queue:
         """Abstract queue that is backed by the internal circular buffer."""
@@ -288,6 +300,7 @@ class Streamer:
             to the underlying buffer. The guard, when placed in a with statement, returns a reference to the next
             available element in the buffer.
             This method blocks until data is available.
+
             :return: A guard object that returns a reference to the element.
             """
             return self.cbuf.get_direct()
@@ -296,6 +309,7 @@ class Streamer:
             """
             Convenience method for easy iteration over elements in the queue.
             Each iteration of the iterator will block until an element is available to be read.
+
             :return: An iterator for the queue.
             """
             while True:
@@ -319,17 +333,18 @@ class Streamer:
         to the default. When cyclic=False, and block_size does not divide the dataset evenly, the remainder elements
         will not be returned by the queue. When cyclic=True, the remainder elements will be part of a block that wraps
         around the end and includes element from the beginning of the dataset.
+
         :param path: The HDF5 path to the dataset that should be read.
         :param n_procs: The number of background processes used to read the datset in parallel.
         :param read_ahead: The number of blocks to allocate in the internal buffer.
         :param cyclic: True if the queue should wrap at the end of the dataset.
         :param block_size: The size along the outer dimension of the blocks to be read. Defaults to a multiple of
-        the chunk size, or to a 128KB sized block if the dataset is not chunked.
+            the chunk size, or to a 128KB sized block if the dataset is not chunked.
         :return: A queue object that allows access to the internal buffer.
         """
         # Get a block_size length of elements from the dataset to serve as a template for creating the buffer.
         # If block_size=None, then get_batch calculates an appropriate block size.
-        example = self.get_batch(path, block_size)
+        example = self.__get_batch(path, block_size)
         block_size = example.shape[0]
 
         if read_ahead is None:
@@ -344,7 +359,7 @@ class Streamer:
         for i in range(n_procs):
             # Each process is offset in the dataset by i*block_size
             # The skip length is set to n_procs*block_size so that no block is read by 2 processes.
-            process = multiprocessing.Process(target=Streamer.read_process, args=(
+            process = multiprocessing.Process(target=Streamer.__read_process, args=(
                 self, path, block_size, cbuf, stop, barrier, cyclic,
                 i * block_size, n_procs * block_size
             ))
@@ -374,6 +389,7 @@ class Streamer:
         Elements from the dataset are returned from the generator one row at a time.
         Unlike the direct access queue, this generator also returns the remainder elements.
         See the get_queue method for documentation on the parameters.
+
         :param path:
         :param n_procs:
         :param read_ahead:
@@ -391,7 +407,7 @@ class Streamer:
             for row in batch_copy:
                 yield row
 
-        last_batch = self.get_batch(path, q.block_size, last=True)
+        last_batch = self.get_remainder(path, q.block_size)
         for row in last_batch:
             yield row
 
