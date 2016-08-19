@@ -8,7 +8,8 @@ Installation
 
     pip install git+https://github.com/ghcollin/multitables.git
 
-or download and run
+Alternatively, `download <https://github.com/ghcollin/multitables/archive/master.zip>`_
+or `clone the repository <https://github.com/ghcollin/multitables>`_ and run
 
 ::
 
