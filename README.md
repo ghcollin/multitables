@@ -8,7 +8,7 @@ The data is organised by rows of an array (elements of the outer-most dimension)
 Due to the concurrent nature of the library, there is **_no guarantee_** on the ordering of the rows and/or blocks
 returned to the user. They are returned as they become available.
 
-Performance gains of at least 2x can be achieved when reading from an SSD. 
+[Performance gains](http://multitables.readthedocs.io/en/latest/benchmark.html) of at least 2x can be achieved when reading from an SSD. 
 
 # Licence
 This software is distributed under the MIT licence. 
@@ -36,3 +36,11 @@ for row in stream.get_generator(path='/internal/h5/path'):
 
 # Examples
 See the [unit tests](https://github.com/ghcollin/multitables/blob/master/multitables_test.py) for complete examples.
+
+# Documentation
+[Online documentation](http://multitables.readthedocs.io/en/latest/) is available. 
+A [how to](http://multitables.readthedocs.io/en/latest/howto.html) gives a basic overview of the library. 
+A [benchmark](http://multitables.readthedocs.io/en/latest/benchmark.html) tests the speed of the library using various 
+compression algorithms and hardware configurations.
+
+Offline documentation can be built from the `docs` folder using `sphinx`.
