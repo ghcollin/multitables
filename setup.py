@@ -5,7 +5,7 @@ setup(
     version='1.0.0',
     url='https://github.com/ghcollin/multitables',
     description='High performance parallel reading of HDF5 files using PyTables, multiprocessing, and shared memory.',
-    long_description=open("README.md").read(),
+    long_description=open("README.rst").read(),
     keywords='tables hdf5 parallel concurrent',
     license='MIT',
     author='ghcollin',
