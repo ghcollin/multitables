@@ -8,7 +8,7 @@ import multiprocessing
 import threading
 
 __author__ = "G. H. Collin"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 class QueueClosed:

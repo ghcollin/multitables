@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     name='multitables',
-    version='1.0.0',
+    version='1.1.0',
     url='https://github.com/ghcollin/multitables',
     description='High performance parallel reading of HDF5 files using PyTables, multiprocessing, and shared memory.',
     long_description=open("README.rst").read(),
