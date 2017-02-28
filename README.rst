@@ -5,8 +5,9 @@ Data is streamed back to the invoker by use of shared memory space, removing the
 communication overhead.
 
 The data is organised by rows of an array (elements of the outer-most dimension), and groups of these rows form blocks.
-Due to the concurrent nature of the library, there is **no guarantee** on the ordering of the rows and/or blocks
-returned to the user. They are returned as they become available.
+By default, there is **no guarantee** on the ordering of the rows and/or blocks returned to the user, due to the
+concurrent nature of the library. They are returned as they become available. On-disk ordering can be forced using
+the ``ordered`` option, which may result in a performance penalty.
 
 `Performance gains <http://multitables.readthedocs.io/en/latest/benchmark.html>`_ of at
 least 2x can be achieved when reading from an SSD.
@@ -45,7 +46,8 @@ Quick start
 Examples
 ========
 
-See the `unit tests <https://github.com/ghcollin/multitables/blob/master/multitables_test.py>`_ for complete examples.
+See the `how-to <http://multitables.readthedocs.io/en/latest/howto.html>`_ for more in-depth documentation, and the
+`unit tests <https://github.com/ghcollin/multitables/blob/master/multitables_test.py>`_ for complete examples.
 
 Documentation
 =============
