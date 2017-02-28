@@ -36,10 +36,13 @@ def get_batches(array, size):
 
 def assert_items_equal(self, a, b, key):
     self.assertEqual(len(a), len(b))
-    a_sorted, b_sorted = sorted(a, key=key), sorted(b, key=key)
+    if key is not None:
+        a_sorted, b_sorted = sorted(a, key=key), sorted(b, key=key)
+    else:
+        a_sorted, b_sorted = a, b
     for i in range(len(a)):
         self.assertTrue(np.all(a_sorted[i] == b_sorted[i]),
-                        msg=str(i) + ": LHS: \n" + str(a_sorted[i]) + "\n RHS: \n" + str(b_sorted[i]))
+                        msg=str(i) + "/" + str(len(a)) + "): LHS: \n" + str(a_sorted[i]) + "\n RHS: \n" + str(b_sorted[i]))
 
 
 class MultiTablesTest(unittest.TestCase):
@@ -83,12 +86,37 @@ class MultiTablesTest(unittest.TestCase):
                            list(self.test_array),
                            key=lambda x: x[0, 0])
 
+        ary_gen.close()
+
         table_gen = reader.get_generator(path=self.test_table_path)
 
         assert_items_equal(self,
                            list(table_gen),
                            list(self.test_table_ary),
                            key=lambda x: x['col_B'][0][0])
+
+        table_gen.close()
+
+    def test_ordered(self):
+        reader = multitables.Streamer(filename=self.test_filename)
+
+        ary_gen = reader.get_generator(path=self.test_array_path, ordered=True)
+
+        assert_items_equal(self,
+                           list(ary_gen),
+                           list(self.test_array),
+                           key=None)
+
+        ary_gen.close()
+
+        table_gen = reader.get_generator(path=self.test_table_path, ordered=True)
+
+        assert_items_equal(self,
+                           list(table_gen),
+                           list(self.test_table_ary),
+                           key=None)
+
+        table_gen.close()
 
     def test_direct(self):
         block_size = None
@@ -139,7 +167,9 @@ class MultiTablesTest(unittest.TestCase):
         result = []
         for i, row in enumerate(ary):
             if i >= num_cycles*len(self.test_array):
+                #print("Terminating at " + str(row[0,0]))
                 break
+            #print(row[0, 0])
             result.append(row)
 
         assert_items_equal(self,
@@ -147,6 +177,35 @@ class MultiTablesTest(unittest.TestCase):
                            list(self.test_array)*num_cycles,
                            key=lambda x: x[0, 0])
         #self.assertEqual(len(result), 4*len(self.test_array))
+        ary.close()
+
+    def test_cycle_ordered(self):
+        block_size = 45
+        num_cycles = lcm(block_size, len(self.test_array))//len(self.test_array)
+        if num_cycles < 3:
+            num_cycles = 4
+        elif num_cycles == 3:
+            num_cycles = 6
+        reader = multitables.Streamer(filename=self.test_filename)
+
+        ary = reader.get_generator(path=self.test_array_path, cyclic=True, block_size=block_size, ordered=True)
+
+        result = []
+        for i, row in enumerate(ary):
+            if i >= num_cycles*len(self.test_array):
+                print("Terminating at " + str(row[0,0]))
+                break
+            #print(row[0, 0])
+            result.append(row)
+
+        #print(np.bincount(np.array(result)[:,0,0]/100))
+
+        assert_items_equal(self,
+                           result,
+                           list(self.test_array)*num_cycles,
+                           key=None)
+
+        ary.close()
 
     def test_threaded(self):
         block_size = len(self.test_array)//100
@@ -156,6 +215,7 @@ class MultiTablesTest(unittest.TestCase):
 
         lock = threading.Lock()
         result = []
+
         def read():
             while True:
                 guard = queue.get()
@@ -250,6 +310,8 @@ class MultiTablesTest(unittest.TestCase):
 
         for row in gen:
             do_something_else(row)
+
+        gen.close()
 
 if __name__ == '__main__':
     unittest.main()

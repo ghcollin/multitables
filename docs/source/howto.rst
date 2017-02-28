@@ -26,10 +26,13 @@ released.
         n_procs=4,        # Number of processes to launch for parallel reads. Defaults to 4.
         read_ahead=5,     # Size of internal buffer in no. of blocks. Defaults to 2*n_proc+1.
         cyclic=False,     # A cyclic reader wraps at the end of the dataset. Defaults to False.
-        block_size=32     # Size (along the outer dimension) of the blocks that will be read.
+        block_size=32,    # Size (along the outer dimension) of the blocks that will be read.
                           # Defaults to a multiple of the dataset chunk size, or a 128KB block.
                           # Should be left to the default or carefully chosen for chunked arrays,
                           # else performance degradation can occur.
+        ordered=False     # Force the stream to return blocks in on-disk order. Useful if two
+                          # datasets need to be read synchronously. This option may have a
+                          # performance penalty.
     )
 
     while True:

@@ -32,4 +32,5 @@ Quick start
 Examples
 ========
 
-See the `unit tests <https://github.com/ghcollin/multitables/blob/master/multitables_test.py>`_ for complete examples.
+See the :doc:`How-To <howto>` for more in-depth documentation, and the
+`unit tests <https://github.com/ghcollin/multitables/blob/master/multitables_test.py>`_ for complete examples.

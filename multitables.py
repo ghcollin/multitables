@@ -63,6 +63,160 @@ class Barrier:
         self.barrier_A.reset()
 
 
+class OrderedBarrier:
+    """Synchronization barrier that allows processes through one at a time using an index based ordering."""
+
+    class Guard:
+        """with statement guard for ordered barrier"""
+        def __init__(self, sync, index, next_index):
+            """
+            The guard waits on entry until the barrier is ready to let the process identified by index to pass.
+            Once the guard exits, it increments the shared counter by the skip value and notifies waiting processes.
+            :param sync: The parent OrderedBarrier object.
+            :param index: The order to wait for.
+            :param next_index: After exiting, release the process waiting on next_index.
+            """
+            self.sync = sync
+            self.index = index
+            self.next_index = next_index
+
+        def __enter__(self):
+            with self.sync.cvar:
+                # Wait until index equals the internal shared counter.
+                while self.sync.sval.value != self.index:
+                    self.sync.cvar.wait()
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            with self.sync.cvar:
+                # Increase the shared counter by the skip value.
+                self.sync.sval.value = self.next_index
+                # Notifying the remaining processes allows the process with index = (this index + skip) to pass
+                self.sync.cvar.notify_all()
+
+    def __init__(self):
+        """
+        Create an ordered barrier. When processes wait on this barrier, they are let through one at a time based
+        on the provided index. The first process to be let through should provide an index of zero. Each subsequent
+        process to be let through should provide an index equal to the current value of the internal counter.
+        """
+        import multiprocessing.sharedctypes
+        self.cvar = multiprocessing.Condition()
+        self.sval = multiprocessing.sharedctypes.RawValue('L')
+        self.sval.value = 0
+
+    def wait(self, index, next_index=None):
+        """
+        Block until it is the turn indicated by index.
+        :param index:
+        :param next_index: Set the index to this value after finishing. Releases the process waiting on next_index.
+            Defaults to incrementing index by 1.
+        :return:
+        """
+        return OrderedBarrier.Guard(self, index, index+1 if next_index is None else next_index)
+
+
+class GuardSynchronizer:
+    """Synchronises access to the entering an exiting of a resource using ordered barriers."""
+
+    class Guard:
+        """Compositional guard between the provided resource and the internal ordered barriers."""
+        def __init__(self, sync, inner_guard, index, next_index):
+            """
+            Creates a guard that will wait on the first barrier to enter the resource. Then wait on the second
+            barrier to exit the resource.
+            :param sync: The parent GuardSynchronizer object.
+            :param inner_guard: The resource to control access to.
+            :param index: The order to wait for.
+            """
+            self.sync = sync
+            self.index = index, next_index
+            self.inner_guard = inner_guard
+
+        def __enter__(self):
+            with self.sync.barrier_in.wait(*self.index):
+                rval = self.inner_guard.__enter__()
+            return rval
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            with self.sync.barrier_out.wait(*self.index):
+                self.inner_guard.__exit__(exc_type, exc_val, exc_tb)
+
+    def __init__(self):
+        """
+        Create a synchronizer that consists of two ordered barriers.
+        """
+        self.barrier_in = OrderedBarrier()
+        self.barrier_out = OrderedBarrier()
+
+    def do(self, guard, index, next_index):
+        """
+        Create a guard that requires the resource guard to be entered and exited based on the order provided by index.
+        :param guard: The context manager for the resource.
+        :param index: The order to wait for.
+        :param next_index: The next index to release.
+        :return:
+        """
+        return GuardSynchronizer.Guard(self, guard, index, next_index)
+
+
+class SafeQueue:
+    """multiprocessing.Queue serialises python objects and stuffs them into a Pipe object.
+    This serialisation happens in a background thread, and it not tied to the put() call.
+    As such, no guarantee can be made about the order in while objects are put in the queue during threaded access.
+    This poses a problem for the ordered mode, as it requires this guarantee.
+    This class implements a very simple bounded queue that can guarantee ordering of inserted items."""
+    def __init__(self, size):
+        # The size of the queue is increased by one to give space for a QueueClosed signal.
+        size += 1
+        import multiprocessing.sharedctypes
+        # The condition variable is used to both lock access to the internal resources and signal new items are ready.
+        self.cvar = multiprocessing.Condition()
+        # A shared array is used to store items in the queue
+        sary = multiprocessing.sharedctypes.RawArray('b', 8*size)
+        self.vals = np.frombuffer(sary, dtype=np.int64, count=size)
+        self.vals[:] = -1
+        # tail is the next item to be read from the queue
+        self.tail = multiprocessing.sharedctypes.RawValue('l', 0)
+        # size is the current number of items in the queue. head = tail + size
+        self.size = multiprocessing.sharedctypes.RawValue('l', 0)
+
+    def put(self, v):
+        """
+        Put an unsigned integer into the queue. This method always assumes that there is space in the queue.
+        ( In the circular buffer, this is guaranteed by the implementation )
+        :param v: The item to insert. Must be >= 0, as -2 is used to signal a queue close.
+        :return:
+        """
+        if v is QueueClosed:
+            v = -2
+        else:
+            assert(v >= 0)
+        with self.cvar:
+            assert(self.size.value < len(self.vals))
+
+            head = (self.tail.value + self.size.value) % len(self.vals)
+            self.vals[head] = v
+            self.size.value += 1
+            self.cvar.notify()
+
+    def get(self):
+        """
+        Fetch the next item in the queue. Blocks until an item is ready.
+        :return: The next unsigned integer in the queue.
+        """
+        with self.cvar:
+            while True:
+                if self.size.value > 0:
+                    rval = self.vals[self.tail.value]
+                    self.tail.value = (self.tail.value + 1) % len(self.vals)
+                    self.size.value -= 1
+                    if rval == -2:
+                        return QueueClosed
+                    assert(rval >= 0)
+                    return rval
+                self.cvar.wait()
+
+
 class SharedCircBuf:
     """A circular buffer for numpy arrays that uses shared memory for inter-process communication."""
     def __init__(self, queue_size, ary_template):
@@ -74,13 +228,13 @@ class SharedCircBuf:
         """
         import multiprocessing.sharedctypes
         # The buffer uses two queues to synchonise access to the buffer.
-        # Element indices are put and got from these queues.
+        # Element indices are put and fetched from these queues.
         # Elements that are ready to be written to go into the write_queue.
         # Elements that are ready to be read go into the read_queue.
         # This is essentially a token passing process. Tokens are taken out of queues and are not put back until
         # operations are complete.
-        self.read_queue = multiprocessing.Queue()
-        self.write_queue = multiprocessing.Queue()
+        self.read_queue = SafeQueue(queue_size)
+        self.write_queue = SafeQueue(queue_size)
 
         elem_n_bytes = ary_template.nbytes
         elem_dtype = ary_template.dtype
@@ -96,7 +250,7 @@ class SharedCircBuf:
 
     class Guard:
         """with statement guard object for synchronisation of access to the buffer."""
-        def __init__(self, queue, idx, ary):
+        def __init__(self, out_queue, arys, idx_op):
             """
             The guard object returns ary, and once the guard ends the value of idx is put into queue.
             Used to put an element index representing a token back into the buffer queues once operations on the
@@ -106,15 +260,17 @@ class SharedCircBuf:
             :param idx: The value to put into the queue.
             :param ary: Value to return in the with statement.
             """
-            self.queue = queue
-            self.idx = idx
-            self.ary = ary
+            self.out_queue = out_queue
+            self.arys = arys
+            self.idx_op = idx_op
 
         def __enter__(self):
-            return self.ary
+            self.idx = self.idx_op()
+
+            return self.arys[self.idx]
 
         def __exit__(self, *args):
-            self.queue.put(self.idx)
+            self.out_queue.put(self.idx)
 
     class Closed(Exception):
         pass
@@ -130,6 +286,15 @@ class SharedCircBuf:
         with self.put_direct() as ary:
             ary[:] = in_ary
 
+    def __put_idx(self):
+        write_idx = self.write_queue.get()
+
+        if write_idx is QueueClosed:
+            self.write_queue.put(QueueClosed)
+            raise self.Closed("Queue closed")
+
+        return write_idx
+
     def put_direct(self):
         """
         Allows direct access to the buffer element.
@@ -137,15 +302,9 @@ class SharedCircBuf:
 
         :return: A guard object that returns the buffer element.
         """
-        # Get the next element that can be written to.
-        write_idx = self.write_queue.get()
-
-        if write_idx is QueueClosed:
-            self.write_queue.put(QueueClosed)
-            raise self.Closed("Queue closed")
 
         # Once the guard is released, write_idx will be placed into read_queue.
-        return self.Guard(self.read_queue, write_idx, self.arys[write_idx])
+        return self.Guard(self.read_queue, self.arys, self.__put_idx)
 
     def get(self):
         """
@@ -158,6 +317,15 @@ class SharedCircBuf:
             result = ary.copy()
         return result
 
+    def __get_idx(self):
+        read_idx = self.read_queue.get()
+
+        if read_idx is QueueClosed:
+            self.read_queue.put(QueueClosed)
+            return QueueClosed
+
+        return read_idx
+
     def get_direct(self):
         """
         Allows direct access to the buffer element.
@@ -165,14 +333,14 @@ class SharedCircBuf:
 
         :return: A guard object that returns the buffer element.
         """
-        # Get the next element that can be written.
-        read_idx = self.read_queue.get()
+
+        read_idx = self.__get_idx()
+
         if read_idx is QueueClosed:
-            self.read_queue.put(QueueClosed)
             return QueueClosed
-        else:
-            # Once the guard is released, read_idx will be placed into write_queue.
-            return self.Guard(self.write_queue, read_idx, self.arys[read_idx])
+
+        # Once the guard is released, read_idx will be placed into write_queue.
+        return self.Guard(self.write_queue, self.arys, lambda: read_idx)
 
     def close(self):
         """Close the queue, signalling that no more data can be put into the queue."""
@@ -195,7 +363,7 @@ class Streamer:
         self.h5_kw_args = kw_args
 
     @staticmethod
-    def __read_process(self, path, read_size, cbuf, stop, barrier, cyclic, offset, read_skip):
+    def __read_process(self, path, read_size, cbuf, stop, barrier, cyclic, offset, read_skip, sync):
         """
         Main function for the processes that read from the HDF5 file.
 
@@ -208,6 +376,7 @@ class Streamer:
         :param cyclic: True if the process should read cyclically.
         :param offset: Offset into the dataset that this process should start reading at.
         :param read_skip: How many element to skip on each iteration.
+        :param sync: GuardSynchonizer to order writes to the buffer.
         :return: Nothing
         """
         # Multi-process access to HDF5 seems to behave better there are no top level imports of PyTables.
@@ -222,8 +391,18 @@ class Streamer:
             if i + read_size > len(ary):
                 vals = np.concatenate([vals, ary[0:read_size - len(vals)]])
 
-            with cbuf.put_direct() as put_ary:
-                put_ary[:] = vals
+            if sync is None:
+                # If no ordering is requested, then just write to the next available space in the buffer.
+                with cbuf.put_direct() as put_ary:
+                    put_ary[:] = vals
+            else:
+                # Otherwise, use the sync object to ensure that writes occur in the order provided by i.
+                # So i = 0 will write first, then i = block_size, then i = 2*block_size, etc...
+                # The sync object has two ordered barriers so that acquisition and release of the buffer spaces
+                # are synchronized in order, but the actual writing to the buffer can happen simultaneously.
+                # If only one barrier were used, writing to the buffer would be linearised.
+                with sync.do(cbuf.put_direct(), i, (i+read_size) % len(ary)) as put_ary:
+                    put_ary[:] = vals
 
             i += read_skip
             if cyclic:
@@ -252,7 +431,7 @@ class Streamer:
         if len(h5_node) == 0:
             raise Exception("Cannot read from empty dataset.")
 
-        # If the length isn't specifed, then fall back to default values.
+        # If the length isn't specified, then fall back to default values.
         if length is None:
             chunkshape = h5_node.chunkshape
             # If the array isn't chunked, then try to make the block close to 128KB.
@@ -326,13 +505,14 @@ class Streamer:
         def __del__(self):
             self.close()
 
-    def get_queue(self, path, n_procs=4, read_ahead=5, cyclic=False, block_size=None):
+    def get_queue(self, path, n_procs=4, read_ahead=5, cyclic=False, block_size=None, ordered=False):
         """
         Get a queue that allows direct access to the internal buffer. If the dataset to be read is chunked, the
         block_size should be a multiple of the chunk size to maximise performance. In this case it is best to leave it
         to the default. When cyclic=False, and block_size does not divide the dataset evenly, the remainder elements
         will not be returned by the queue. When cyclic=True, the remainder elements will be part of a block that wraps
-        around the end and includes element from the beginning of the dataset.
+        around the end and includes element from the beginning of the dataset. By default, blocks are returned in the
+        order in which they become available. The ordered option will force blocks to be returned in on-disk order.
 
         :param path: The HDF5 path to the dataset that should be read.
         :param n_procs: The number of background processes used to read the datset in parallel.
@@ -340,6 +520,7 @@ class Streamer:
         :param cyclic: True if the queue should wrap at the end of the dataset.
         :param block_size: The size along the outer dimension of the blocks to be read. Defaults to a multiple of
             the chunk size, or to a 128KB sized block if the dataset is not chunked.
+        :param ordered: Force the reader return data in on-disk order. May result in performance penalty.
         :return: A queue object that allows access to the internal buffer.
         """
         # Get a block_size length of elements from the dataset to serve as a template for creating the buffer.
@@ -355,13 +536,16 @@ class Streamer:
         stop = multiprocessing.Event()
         barrier = Barrier(n_procs)
 
+        # If ordering has been requested, create a synchronizer.
+        sync = GuardSynchronizer() if ordered else None
+
         procs = []
         for i in range(n_procs):
             # Each process is offset in the dataset by i*block_size
             # The skip length is set to n_procs*block_size so that no block is read by 2 processes.
             process = multiprocessing.Process(target=Streamer.__read_process, args=(
                 self, path, block_size, cbuf, stop, barrier, cyclic,
-                i * block_size, n_procs * block_size
+                i * block_size, n_procs * block_size, sync
             ))
             process.daemon = True
             process.start()
@@ -383,32 +567,31 @@ class Streamer:
 
         return Streamer.Queue(cbuf, stop, block_size)
 
-    def get_generator(self, path, n_procs=4, read_ahead=None, cyclic=False, block_size=None):
+    def get_generator(self, path, *args, **kw_args):
         """
         Get a generator that allows convenient access to the streamed data.
         Elements from the dataset are returned from the generator one row at a time.
         Unlike the direct access queue, this generator also returns the remainder elements.
-        See the get_queue method for documentation on the parameters.
+        Additional arguments are forwarded to get_queue.
+        See the get_queue method for documentation of these parameters.
 
         :param path:
-        :param n_procs:
-        :param read_ahead:
-        :param cyclic:
-        :param block_size:
         :return: A generator that iterates over the rows in the dataset.
         """
-        q = self.get_queue(path=path, read_ahead=read_ahead, n_procs=n_procs, cyclic=cyclic, block_size=block_size)
+        q = self.get_queue(path=path, *args, **kw_args)
 
-        # This generator just implements a standard access pattern for the direct access queue.
-        for guard in q.iter():
-            with guard as batch:
-                batch_copy = batch.copy()
+        try:
+            # This generator just implements a standard access pattern for the direct access queue.
+            for guard in q.iter():
+                with guard as batch:
+                    batch_copy = batch.copy()
 
-            for row in batch_copy:
+                for row in batch_copy:
+                    yield row
+
+            last_batch = self.get_remainder(path, q.block_size)
+            for row in last_batch:
                 yield row
 
-        last_batch = self.get_remainder(path, q.block_size)
-        for row in last_batch:
-            yield row
-
-        q.close()
+        finally:
+            q.close()
