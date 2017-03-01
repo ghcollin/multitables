@@ -1,4 +1,4 @@
-``multitables`` is a python library designed for high speed access to HDF5 files.
+`multitables <https://github.com/ghcollin/multitables>`_ is a python library designed for high speed access to HDF5 files.
 Access to HDF5 is provided by the PyTables library (``tables``).
 Multiple processes are launched to read a HDF5 in parallel, allowing concurrent decompression.
 Data is streamed back to the invoker by use of shared memory space, removing the usual multiprocessing
