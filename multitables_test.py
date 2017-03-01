@@ -14,7 +14,7 @@ import threading
 import multitables
 
 __author__ = "G. H. Collin"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 
 def lcm(a,b):
