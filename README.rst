@@ -23,12 +23,7 @@ Installation
 
 ::
 
-    pip install git+https://github.com/ghcollin/multitables.git
-
-or download and run
-::
-
-    python setup.py install
+    pip install multitables
 
 ``multitables`` depends on ``tables`` (the pytables package) and ``numpy``.
 The package is compatible with the latest versions of python 2 and 3.

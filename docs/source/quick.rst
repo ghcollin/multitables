@@ -6,9 +6,15 @@ Installation
 
 ::
 
+    pip install multitables
+
+Alternatively, to install from HEAD, run
+
+::
+
     pip install git+https://github.com/ghcollin/multitables.git
 
-Alternatively, `download <https://github.com/ghcollin/multitables/archive/master.zip>`_
+You can also `download <https://github.com/ghcollin/multitables/archive/master.zip>`_
 or `clone the repository <https://github.com/ghcollin/multitables>`_ and run
 
 ::
