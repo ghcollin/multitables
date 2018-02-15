@@ -14,7 +14,7 @@ import threading
 import multitables
 
 __author__ = "G. H. Collin"
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 
 def lcm(a,b):
@@ -156,10 +156,11 @@ class MultiTablesTest(unittest.TestCase):
     def test_cycle(self):
         block_size = 45
         num_cycles = lcm(block_size, len(self.test_array))//len(self.test_array)
-        if num_cycles < 3:
-            num_cycles = 4
-        elif num_cycles == 3:
-            num_cycles = 6
+        #if num_cycles < 3:
+        #    num_cycles = 4
+        #elif num_cycles == 3:
+        #    num_cycles = 6
+        num_cycles = max(num_cycles, num_cycles*(int(100/num_cycles)+1))
         reader = multitables.Streamer(filename=self.test_filename)
 
         ary = reader.get_generator(path=self.test_array_path, cyclic=True, block_size=block_size)
@@ -179,6 +180,21 @@ class MultiTablesTest(unittest.TestCase):
         #self.assertEqual(len(result), 4*len(self.test_array))
         ary.close()
 
+        queue = reader.get_queue(path=self.test_array_path, cyclic=True, block_size=block_size)
+
+        result = []
+        for i in range(num_cycles*len(self.test_array)//block_size):
+            guard = queue.get()
+            self.assertIsNot(guard, multitables.QueueClosed)
+            with guard as batch:
+                result.append(batch.copy())
+
+        assert_items_equal(self,
+                           np.concatenate(result, axis=0),
+                           list(self.test_array) * num_cycles,
+                           key=lambda x: x[0, 0])
+        queue.close()
+
     def test_cycle_ordered(self):
         block_size = 45
         num_cycles = lcm(block_size, len(self.test_array))//len(self.test_array)
@@ -193,7 +209,7 @@ class MultiTablesTest(unittest.TestCase):
         result = []
         for i, row in enumerate(ary):
             if i >= num_cycles*len(self.test_array):
-                print("Terminating at " + str(row[0,0]))
+                #print("Terminating at " + str(row[0,0]))
                 break
             #print(row[0, 0])
             result.append(row)

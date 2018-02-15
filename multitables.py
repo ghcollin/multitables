@@ -8,7 +8,7 @@ import multiprocessing
 import threading
 
 __author__ = "G. H. Collin"
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 
 class QueueClosed:
@@ -162,7 +162,7 @@ class GuardSynchronizer:
 class SafeQueue:
     """multiprocessing.Queue serialises python objects and stuffs them into a Pipe object.
     This serialisation happens in a background thread, and it not tied to the put() call.
-    As such, no guarantee can be made about the order in while objects are put in the queue during threaded access.
+    As such, no guarantee can be made about the order in which objects are put in the queue during threaded access.
     This poses a problem for the ordered mode, as it requires this guarantee.
     This class implements a very simple bounded queue that can guarantee ordering of inserted items."""
     def __init__(self, size):
@@ -348,6 +348,59 @@ class SharedCircBuf:
         self.write_queue.put(QueueClosed)
 
 
+def _Streamer__read_process(self, path, read_size, cbuf, stop, barrier, cyclic, offset, read_skip, sync):
+    """
+    Main function for the processes that read from the HDF5 file.
+
+    :param self: A reference to the streamer object that created these processes.
+    :param path: The HDF5 path to the node to be read from.
+    :param read_size: The length of the block along the outer dimension to read.
+    :param cbuf: The circular buffer to place read elements into.
+    :param stop: The Event that signals the process to stop reading.
+    :param barrier: The Barrier that synchonises read cycles.
+    :param cyclic: True if the process should read cyclically.
+    :param offset: Offset into the dataset that this process should start reading at.
+    :param read_skip: How many element to skip on each iteration.
+    :param sync: GuardSynchonizer to order writes to the buffer.
+    :return: Nothing
+    """
+    # Multi-process access to HDF5 seems to behave better there are no top level imports of PyTables.
+    import tables as tb
+    h5_file = tb.open_file(self.filename, 'r', **self.h5_kw_args)
+    ary = h5_file.get_node(path)
+
+    i = offset
+    while not stop.is_set():
+        vals = ary[i:i + read_size]
+        # If the read goes off the end of the dataset, then wrap to the start.
+        if i + read_size > len(ary):
+            vals = np.concatenate([vals, ary[0:read_size - len(vals)]])
+
+        if sync is None:
+            # If no ordering is requested, then just write to the next available space in the buffer.
+            with cbuf.put_direct() as put_ary:
+                put_ary[:] = vals
+        else:
+            # Otherwise, use the sync object to ensure that writes occur in the order provided by i.
+            # So i = 0 will write first, then i = block_size, then i = 2*block_size, etc...
+            # The sync object has two ordered barriers so that acquisition and release of the buffer spaces
+            # are synchronized in order, but the actual writing to the buffer can happen simultaneously.
+            # If only one barrier were used, writing to the buffer would be linearised.
+            with sync.do(cbuf.put_direct(), i, (i+read_size) % len(ary)) as put_ary:
+                put_ary[:] = vals
+
+        i += read_skip
+        if cyclic:
+            # If the next iteration is past the end of the dataset, wrap it around.
+            if i >= len(ary):
+                i %= len(ary)
+                barrier.wait()
+        else:
+            # But if cyclic mode is disabled, break the loop as the work is now done.
+            if i + read_size > len(ary):
+                break
+
+
 class Streamer:
     """Provides methods for streaming data out of HDF5 files."""
 
@@ -361,59 +414,6 @@ class Streamer:
         """
         self.filename = filename
         self.h5_kw_args = kw_args
-
-    @staticmethod
-    def __read_process(self, path, read_size, cbuf, stop, barrier, cyclic, offset, read_skip, sync):
-        """
-        Main function for the processes that read from the HDF5 file.
-
-        :param self: A reference to the streamer object that created these processes.
-        :param path: The HDF5 path to the node to be read from.
-        :param read_size: The length of the block along the outer dimension to read.
-        :param cbuf: The circular buffer to place read elements into.
-        :param stop: The Event that signals the process to stop reading.
-        :param barrier: The Barrier that synchonises read cycles.
-        :param cyclic: True if the process should read cyclically.
-        :param offset: Offset into the dataset that this process should start reading at.
-        :param read_skip: How many element to skip on each iteration.
-        :param sync: GuardSynchonizer to order writes to the buffer.
-        :return: Nothing
-        """
-        # Multi-process access to HDF5 seems to behave better there are no top level imports of PyTables.
-        import tables as tb
-        h5_file = tb.open_file(self.filename, 'r', **self.h5_kw_args)
-        ary = h5_file.get_node(path)
-
-        i = offset
-        while not stop.is_set():
-            vals = ary[i:i + read_size]
-            # If the read goes off the end of the dataset, then wrap to the start.
-            if i + read_size > len(ary):
-                vals = np.concatenate([vals, ary[0:read_size - len(vals)]])
-
-            if sync is None:
-                # If no ordering is requested, then just write to the next available space in the buffer.
-                with cbuf.put_direct() as put_ary:
-                    put_ary[:] = vals
-            else:
-                # Otherwise, use the sync object to ensure that writes occur in the order provided by i.
-                # So i = 0 will write first, then i = block_size, then i = 2*block_size, etc...
-                # The sync object has two ordered barriers so that acquisition and release of the buffer spaces
-                # are synchronized in order, but the actual writing to the buffer can happen simultaneously.
-                # If only one barrier were used, writing to the buffer would be linearised.
-                with sync.do(cbuf.put_direct(), i, (i+read_size) % len(ary)) as put_ary:
-                    put_ary[:] = vals
-
-            i += read_skip
-            if cyclic:
-                # If the next iteration is past the end of the dataset, wrap it around.
-                if i >= len(ary):
-                    i %= len(ary)
-                    barrier.wait()
-            else:
-                # But if cyclic mode is disabled, break the loop as the work is now done.
-                if i + read_size > len(ary):
-                    break
 
     def __get_batch(self, path, length, last=False):
         """
@@ -505,7 +505,7 @@ class Streamer:
         def __del__(self):
             self.close()
 
-    def get_queue(self, path, n_procs=4, read_ahead=5, cyclic=False, block_size=None, ordered=False):
+    def get_queue(self, path, n_procs=4, read_ahead=None, cyclic=False, block_size=None, ordered=False):
         """
         Get a queue that allows direct access to the internal buffer. If the dataset to be read is chunked, the
         block_size should be a multiple of the chunk size to maximise performance. In this case it is best to leave it
@@ -543,7 +543,7 @@ class Streamer:
         for i in range(n_procs):
             # Each process is offset in the dataset by i*block_size
             # The skip length is set to n_procs*block_size so that no block is read by 2 processes.
-            process = multiprocessing.Process(target=Streamer.__read_process, args=(
+            process = multiprocessing.Process(target=_Streamer__read_process, args=(
                 self, path, block_size, cbuf, stop, barrier, cyclic,
                 i * block_size, n_procs * block_size, sync
             ))
