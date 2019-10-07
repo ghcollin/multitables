@@ -22,5 +22,5 @@ setup(
         'Topic :: Software Development :: Libraries :: Python Modules'
     ],
     py_modules=['multitables'],
-    requires=['numpy', 'tables']
+    requires=['numpy', 'tables', 'msgpack>=0.6.0', 'wrapt']
 )
