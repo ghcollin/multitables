@@ -66,8 +66,35 @@ class MultiTablesTestV2(unittest.TestCase):
 
         test_file.close()
 
+        self._retry_delete = False
+
     def tearDown(self):
-        shutil.rmtree(self.test_dir)
+        import errno
+        import time
+        # There can be some trouble with deleting the test HDF5 file on Windows. If the file is deleted too quickly
+        # then one of the reader background processes may not have started yet, and will raise an exception when
+        # it cannot find the (now deleted) test HDF5 file.
+        time.sleep(0.1)
+        # In addition, if the reader does not wait for background processes/threads to shutdown when it is closed,
+        # then deleting the test HDF5 file can raise a permission error, as one of the background processes still
+        # has the HDF5 open, and has not shut down yet. In this case, the cleanup procedure waits a fraction of a
+        # second and tries again, until the test file is correctly deleted. This retry is only attempted if the
+        # self._retry_delete attribute is True, that way it can (by default) be set to False when the reader is
+        # closed with wait=True, in order to properly test the background process shutdown procedure on Windows.
+        while True:
+            try:
+                shutil.rmtree(self.test_dir)
+                break
+            except (IOError, OSError) as e:
+                if (e.errno == errno.EPERM or e.errno == errno.EACCES) and self._retry_delete:
+                    # If the raised error has to do with permissions.
+                    time.sleep(0.1)
+                    continue
+                else:
+                    raise
+        if self._retry_delete:
+            self._retry_delete = False
+        
 
     def test_random_access(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -89,7 +116,7 @@ class MultiTablesTestV2(unittest.TestCase):
                 np.testing.assert_array_equal(data, self.test_table_ary[idx:idx+2])
 
         data = None
-        reader.close()
+        reader.close(wait=True)
 
     def test_overlapping_access_ary(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -111,7 +138,7 @@ class MultiTablesTestV2(unittest.TestCase):
                 #print(array_idx)
                 np.testing.assert_array_equal(req.get(), self.test_array[array_idx])
 
-        reader.close()
+        reader.close(wait=True)
 
     def test_overlapping_access_tbl(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -130,7 +157,7 @@ class MultiTablesTestV2(unittest.TestCase):
             for table_idx, req in reqs:
                 np.testing.assert_array_equal(req.get(), self.test_table_ary[table_idx:table_idx+1])
 
-        reader.close()
+        reader.close(wait=True)
 
     def test_threading_access_tbl(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -172,7 +199,7 @@ class MultiTablesTestV2(unittest.TestCase):
                 stages_cvar.notify()
 
 
-        reader.close()
+        reader.close(wait=True)
 
     def test_pool_tbl(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -196,7 +223,7 @@ class MultiTablesTestV2(unittest.TestCase):
             np.testing.assert_array_equal(reqs.next().get(), self.test_table_ary[idx:idx+1])
 
 
-        reader.close()
+        reader.close(wait=True)
 
     def test_array_getslice(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -212,7 +239,7 @@ class MultiTablesTestV2(unittest.TestCase):
         
         array_stage.close()
 
-        reader.close()
+        reader.close(wait=True)
 
     def test_indexing(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -326,7 +353,7 @@ class MultiTablesTestV2(unittest.TestCase):
             np.testing.assert_array_equal(data, table_subset)
 
         data = None
-        reader.close()
+        reader.close(wait=True)
 
     def test_bad_indexing(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -356,7 +383,7 @@ class MultiTablesTestV2(unittest.TestCase):
 
         data = None
         array_stage_big.close()
-        reader.close()
+        reader.close(wait=True)
 
     def test_stage_size(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -372,7 +399,7 @@ class MultiTablesTestV2(unittest.TestCase):
         with self.assertRaises(multitables.SharedMemoryError):
             test = reader.request(test_table[:], table_stage).get()
 
-        reader.close()
+        reader.close(wait=True)
 
     def test_large_access(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -388,7 +415,7 @@ class MultiTablesTestV2(unittest.TestCase):
             np.testing.assert_array_equal(test, self.test_byte_ary[:10])
 
         array_stage.close()
-        reader.close()
+        reader.close(wait=True)
 
     def test_del(self):
         reader = multitables.Reader(filename=self.test_filename, n_procs=N_PROCS)
@@ -397,6 +424,8 @@ class MultiTablesTestV2(unittest.TestCase):
         array_stage = test_array.create_stage(10)
 
         test = reader.request(test_array[:10], array_stage).get()
+
+        self._retry_delete = True
 
 
 if __name__ == '__main__':

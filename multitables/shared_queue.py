@@ -93,27 +93,35 @@ class SharedQueue:
         self._block_size = self._meta_size + elem_size
 
         # A shared array is used to store items in the queue
-        sary = multiprocessing.sharedctypes.RawArray('b', self._block_size*queue_len)
-        if _PYTHON3:
-            # Python3 memoryview requires a cast to bytes but Python 2 has no cast attribute.
-            self._vals = memoryview(sary).cast('B')
-        else:
-            self._vals = memoryview(sary)
+        self._sary = multiprocessing.sharedctypes.RawArray('b', self._block_size*queue_len)
+        self._vals = None
 
         # tail is the next item to be read from the queue
         self._tail = multiprocessing.sharedctypes.RawValue('l', 0)
         # size is the current number of items in the queue. head = tail + size
         self._size = multiprocessing.sharedctypes.RawValue('l', 0)
 
+        self._side_channel = multiprocessing.Queue()
+
+    def _init_delayed(self):
+        """
+        When Windows launches a new process, it attempt to transmit the current 
+        execution state through pickle. The following objects cannot be pickled,
+        and so they are only initialised after the process starts.
+        """
+        if _PYTHON3:
+            # Python3 memoryview requires a cast to bytes but Python 2 has no cast attribute.
+            self._vals = memoryview(self._sary).cast('B')
+        else:
+            self._vals = memoryview(self._sary)
+        
         # If a request to put an input into the queue happen when the queue is full, it will be put into a buffer which feeds
         # the element in when the queue empties.
         self._put_buffer_cvar = threading.Condition()
         self._put_buffer = collections.deque()
         self._put_buffer_thread = threading.Thread(target=self._buffer_thread)
         self._put_buffer_thread.daemon = True
-        # Note the thread is not started yet. It is started later.
-
-        self._side_channel = multiprocessing.Queue()
+        # Note the thread is not started yet. It is started on demand.
 
     def _buffer_thread(self):
         """
@@ -141,6 +149,10 @@ class SharedQueue:
         :param bytes: The array of bytes to be placed into the queue.
         :param block: Whether to block if the queue is full. Default to True.
         """
+        # Perform the delayed initialisation if necessary.
+        if self._vals is None:
+            self._init_delayed()
+        
         # First check if there's anything ahead of this in the buffer.
         while True:
             with self._put_buffer_cvar:
@@ -247,6 +259,10 @@ class SharedQueue:
         :param timeout: In conjunction with block=True, how long to wait before raising queue.Empty.
         :return: A context manager that yields a memoryview into the underlying memory.
         """
+        # Perform the delayed initialisation if necessary.
+        if self._vals is None:
+            self._init_delayed()
+        
         # If a timeout is requested, start the clock.
         if timeout is not None:
             t_start = time.time()

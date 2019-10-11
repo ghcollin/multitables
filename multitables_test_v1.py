@@ -68,9 +68,29 @@ class MultiTablesTest(unittest.TestCase):
         test_file.close()
 
     def tearDown(self):
-        shutil.rmtree(self.test_dir)
+        import errno
+        import time
+        # There can be some trouble with deleting the test HDF5 file on Windows. If the file is deleted too quickly
+        # then one of the reader background processes may not have started yet, and will raise an exception when
+        # it cannot find the (now deleted) test HDF5 file.
+        time.sleep(0.1)
+        # In addition, if the reader does not wait for background processes/threads to shutdown when it is closed,
+        # then deleting the test HDF5 file can raise a permission error, as one of the background processes still
+        # has the HDF5 open, and has not shut down yet. In this case, the cleanup procedure waits a fraction of a
+        # second and tries again, until the test file is correctly deleted.
+        while True:
+            try:
+                shutil.rmtree(self.test_dir)
+                break
+            except (IOError, OSError) as e:
+                if (e.errno == errno.EPERM or e.errno == errno.EACCES):
+                    # If the raised error has to do with permissions.
+                    time.sleep(0.1)
+                    continue
+                else:
+                    raise
 
-    """ def test_get_batches(self):
+    def test_get_batches(self):
         array = np.arange(8)
         batches = get_batches(array, 3)
         assert_items_equal(self, batches,
@@ -152,7 +172,7 @@ class MultiTablesTest(unittest.TestCase):
                            result,
                            get_batches(self.test_array, queue.block_size),
                            key=lambda x: x[0, 0, 0])
-        queue.close() """
+        queue.close()
 
     def test_cycle(self):
         block_size = 45

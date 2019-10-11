@@ -139,13 +139,8 @@ class Reader:
             self._notify = multiprocessing.Queue()
             self._next_req_id = 0
 
-            # Signal events for closing and stopping the threads/processes launched by this object.
-            self._close = threading.Event()
+            # Signal event for stopping the threads/processes launched by this object.
             self._stop = multiprocessing.Event()
-
-            # This dictionary keeps track of currently pending requests.
-            self._open_reqs_dict = {}
-            self._open_reqs_lock = threading.Lock()
 
             procs = []
             for _ in range(n_procs):
@@ -164,6 +159,13 @@ class Reader:
 
             self._monitor_thread = threading.Thread(target=monitor)
             self._monitor_thread.start()
+
+            # Signal event for closing the threads/processes launched by this object.
+            self._close = threading.Event()
+
+            # This dictionary keeps track of currently pending requests.
+            self._open_reqs_dict = {}
+            self._open_reqs_lock = threading.Lock()
 
             def notify_spool():
                 """
@@ -268,13 +270,13 @@ class Reader:
             h5_file = self._open_h5_file()
             h5_ary = h5_file.get_node(path)
 
-            type = None
+            node_type = None
             if isinstance(h5_ary, tb.Table):
-                type = dataset.TableDataset
+                node_type = dataset.TableDataset
             elif isinstance(h5_ary, tb.Array):
-                type = dataset.ArrayDataset
+                node_type = dataset.ArrayDataset
             elif isinstance(h5_ary, tb.VLArray):
-                type = dataset.VLArrayDataset
+                node_type = dataset.VLArrayDataset
             else:
                 raise RuntimeError("Selected dataset is not an array or table.")
         
@@ -282,7 +284,7 @@ class Reader:
             shape = h5_ary.shape
             h5_file.close()
 
-            return type(self, path, dtype, shape)
+            return node_type(self, path, dtype, shape)
 
         def request(self, key, stage):
             """
@@ -332,15 +334,19 @@ class Reader:
             
             return req
 
-        def close(self):
+        def close(self, wait=False):
             """
             Close the reader. After this point, no more requests can be made. Pending requests will still be fulfilled.
             Any attempt to made additional requests will raise an exception. Once all requests have been fulfilled, the
             background processes and threads will be shut down.
+            :param wait: If True, block until all background threads/processes have shut down. False by default.
             """
             if not self._close.is_set():
                 self._close.set()
                 self._queue.put(request_packer.pack(QueueClosed))
+
+            if wait:
+                self._notify_thread.join()
 
         def stop(self):
             """
@@ -371,13 +377,13 @@ class Reader:
         """
         return self._core.request(key, stage)
 
-    def close(self):
+    def close(self, wait=False):
         """
         Close the reader. After this point, no more requests can be made. Pending requests will still be fulfilled.
         Any attempt to made additional requests will raise an exception. Once all requests have been fulfilled, the
         background processes and threads will be shut down.
         """
-        self._core.close()
+        self._core.close(wait)
 
     def stop(self):
         """

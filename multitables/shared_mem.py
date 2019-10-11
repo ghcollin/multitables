@@ -159,13 +159,13 @@ class SharedBuffer:
                         while True:
                             map_id = _make_map_id()
                             # It might be better here to open a mmap with length 0, catch the exception, then reopen it with the correct size
-                            self._mmap = mmap.mmap(-1, alloc_nbytes, tagname=map_id)
+                            self._mmap = mmap.mmap(-1, alloc_nbytes, tagname=map_id.decode("utf-8"))
                             if _winapi.GetLastError() == 0:
                                 # If mapping the segment suceeded, then stop now, otherwise try again.
                                 break
                             self._mmap.close()
                     else:
-                        self._mmap = mmap.mmap(-1, alloc_nbytes, tagname=map_id)
+                        self._mmap = mmap.mmap(-1, alloc_nbytes, tagname=map_id.decode("utf-8"))
 
                     def unlink():
                         pass
