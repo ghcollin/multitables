@@ -25,7 +25,7 @@ _DUNDER_METHODS = functools.reduce(
     operator.or_, 
     [ set(dir(t)) for t in _CLASSES_WITH_DUNDER_METHODS ], 
     set(['__call__'])
-) - set(['__class__', '__init__', '__new__', '__doc__'])
+) - set(['__class__', '__init__', '__new__', '__doc__', '__getattribute__'])
 
 class ReleasedResourceError(Exception):
     """ An exception that should be raised when an attempt is made to access a released resource. """
@@ -36,7 +36,16 @@ def _raise_released_resource_error(*args, **kwargs):
     raise ReleasedResourceError("This resource has been released and is no longer accessible.")
 
 class ReleasedResource(object):
-    pass
+    def __getattr__(self, name):
+        # The wrapper requests __qualname__ from the object it wraps, and correctly handles the case where
+        # __qualname__ does not exist. However, if all methods are overridden with _raise_released_resource_error
+        # then a ReleasedResourceError exception is throw when accessing __qualname__ which wrapt cannot handle.
+        # Thus, __getattr__ is overriden here to raise AttributeError when __qualname__ is requested, and raise
+        # ReleasedResourceError for any other requested attribute.
+        if name == '__qualname__':
+            raise AttributeError()
+        else:
+            _raise_released_resource_error(name)
 
 # Now take the empty ReleasedResource class and fill all of its special methods with the function that
 # raises an exception.
