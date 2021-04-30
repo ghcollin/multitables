@@ -1,4 +1,4 @@
-# Copyright (C) 2019 G. H. Collin (ghcollin)
+# Copyright (C) 2021 G. H. Collin (ghcollin)
 #
 # This software may be modified and distributed under the terms
 # of the MIT license.  See the LICENSE.txt file for details.
@@ -133,10 +133,9 @@ class Reader:
             self._filename = filename
             self._h5_kw_args = kw_args
             # _queue is the request queue
-            self._queue = shared_queue.SharedQueue(1024, 20)
+            self._queue = shared_queue.SharedQueue(1024, 50)
             # Once requests have been handled, their result meta-data get placed in the _notify queue for dispatch.
-            # For some reason, a standard python multiprocessing Queue is faster here than a shared memory queue. 
-            self._notify = multiprocessing.Queue()
+            self._notify = shared_queue.SharedQueue(1024, 50)
             self._next_req_id = 0
 
             # Signal event for stopping the threads/processes launched by this object.
@@ -176,7 +175,8 @@ class Reader:
                 """
                 while True:
                     # Get the next notification.
-                    notification = return_packer.unpack(self._notify.get())
+                    with self._notify.get_direct() as msg:
+                        notification = return_packer.unpack(msg)
                     if len(notification) == 3:
                         # If the notification is for a fulfilled request.
                         with self._open_reqs() as open_reqs:

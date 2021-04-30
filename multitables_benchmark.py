@@ -1,4 +1,4 @@
-# Copyright (C) 2016 G. H. Collin (ghcollin)
+# Copyright (C) 2021 G. H. Collin (ghcollin)
 #
 # This software may be modified and distributed under the terms
 # of the MIT license.  See the LICENSE.txt file for details.
@@ -13,7 +13,7 @@ import tqdm
 import multitables
 
 file_shape = (0, 2**10)
-file_type = np.dtype('Float32')
+file_type = np.dtype('float32')
 file_type_size = 4
 
 class BenchmarkFile:
@@ -37,13 +37,10 @@ class BenchmarkFile:
             array_kw_args['filters'] = tables.Filters(complib=self.complib, complevel=self.complevel)
 
         array_path = '/bench'
-        #ary = h5_file.create_array(h5_file.root, array_path[1:],
-        #                           np.arange(np.prod(file_shape), dtype=file_type).reshape(file_shape))
         ary = h5_file.create_earray(h5_file.root, array_path[1:], atom=tables.Atom.from_dtype(file_type),
                                     shape=file_shape, expectedrows=self.n_rows, **array_kw_args)
         for _ in range(0, self.n_rows, 2**10):
             ary.append(2**8*np.random.randn(2**10, *file_shape[1:]))
-        print(ary.shape)
 
         h5_file.close()
 
@@ -61,9 +58,10 @@ def bench_generator(filename, node_path, n_procs, read_iters, **kwargs):
     gen = stream.get_generator(node_path, n_procs=n_procs, cyclic=True)
 
     start = time.time()
-    for i, row in tqdm.tqdm(enumerate(gen), total=read_iters):
-        if i >= read_iters:
-            break
+    with tqdm.tqdm(enumerate(gen), total=read_iters) as pbar:
+        for i, row in pbar:
+            if i >= read_iters:
+                break
     end = time.time()
 
     return end - start
@@ -127,6 +125,15 @@ def print_table(table):
                 line += "|"
         print(line)
 
+def make_csv(table):
+    result = ""
+    for table_row in table:
+        for i, elem in enumerate(table_row):
+            if i > 0:
+                result += ","
+            result += "\"{}\"".format(elem)
+        result += "\n"
+    return result
 
 def main():
     import argparse
@@ -157,6 +164,8 @@ def main():
     kwargs = {}
     if not args.H5FD_DIRECT_OFF:
         kwargs['DRIVER'] = 'H5FD_DIRECT'
+    else:
+        print("Warning: HDF5 direct driver disabled.")
 
     direct_results = {}
     generator_results = {}
@@ -166,10 +175,14 @@ def main():
             filename, node_path = file_details
             print("Benchmark file created at: " + filename)
 
+            bench_direct(filename, node_path, 1, 2*read_iters, **kwargs)
+
             direct_times = []
             for i in range(max_procs):
                 print("Running direct queue benchmark with n_procs=" + str(i+1))
                 direct_times.append( bench_direct(filename, node_path, i+1, read_iters, **kwargs) )
+
+            bench_generator(filename, node_path, 1, 2*read_iters, **kwargs)
 
             generator_times = []
             for i in range(max_procs):
@@ -184,18 +197,10 @@ def main():
 
     for name, table in names_and_tables:
         print(name + ":")
-        print(make_html(table))
+        print(make_csv(table))
     for name, table in names_and_tables:
         print(name + ":")
         print_table(table)
-
-
-        #print("Results:")
-        #print("n_procs\tGenerator \t(MB/s) \t\tDirect \t(MB/s)")
-        #for i in range(max_procs):
-        #    gen_speed = read_size/generator_times[i]/2**20
-        #    dir_speed = read_size/direct_times[i]/2**20
-        #    print("%i\t%f\t(%f)\t%f\t(%f)" % (i+1, generator_times[i], gen_speed, direct_times[i], dir_speed))
 
 if __name__ == '__main__':
     main()

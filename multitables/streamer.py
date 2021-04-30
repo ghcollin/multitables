@@ -1,4 +1,4 @@
-# Copyright (C) 2019 G. H. Collin (ghcollin)
+# Copyright (C) 2021 G. H. Collin (ghcollin)
 #
 # This software may be modified and distributed under the terms
 # of the MIT license.  See the LICENSE.txt file for details.
@@ -71,7 +71,8 @@ class Streamer:
                 length = min(h5_node.shape[0], default_length)
             # If it is chunked, then use the chunkshape for best performance.
             else:
-                length = chunk_shape[0]
+                chunk_length = chunk_shape[0]
+                length = chunk_length # try to aim for 3MB
 
         if last:
             example = h5_node[length*(len(h5_node)//length):]
@@ -216,6 +217,7 @@ class Streamer:
                     try:
                         req = self._dataset_reader.request(op, stage_pool)
                     except queue.Empty:
+                        # Raised when stage pool is empty
                         continue
                     if ordered:
                         request_pool.add(req)
@@ -223,7 +225,6 @@ class Streamer:
             finally:
                 if ordered:
                     request_pool.add(QueueClosed)
-                    #print(request_pool._queue)
                 self._dataset_reader.close()
 
         self._request_thread = threading.Thread(target=request_spool)
@@ -253,10 +254,6 @@ class Streamer:
 
                 for row in batch_copy:
                     yield row
-
-            #last_batch = self.get_remainder(path, q.block_size)
-            #for row in last_batch:
-            #    yield row
 
         finally:
             q.close()
