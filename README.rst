@@ -5,17 +5,24 @@ Data is streamed back to the invoker by use of shared memory space, removing the
 communication overhead.
 
 The data is organised by rows of an array (elements of the outer-most dimension), and groups of these rows form blocks.
-By default, there is **no guarantee** on the ordering of the rows and/or blocks returned to the user, due to the
+With the ``Streamer`` interface, there is **no guarantee** on the ordering of the rows and/or blocks returned to the user, due to the
 concurrent nature of the library. They are returned as they become available. On-disk ordering can be forced using
 the ``ordered`` option, which may result in a performance penalty.
 
 `Performance gains <http://multitables.readthedocs.io/en/latest/benchmark.html>`_ of at
 least 2x can be achieved when reading from an SSD.
 
+New with version 2
+==================
+
+Random access reads are now possible through asynchronous requests.
+The results of these requests are placed in shared memory.
+See the unit tests for examples of the new interface.
+
 Licence
 =======
 
-This software is distributed under the MIT licence. 
+This software is distributed under the MIT licence.
 See the `LICENSE.txt <https://github.com/ghcollin/multitables/blob/master/LICENSE.txt>`_ file for details.
 
 Installation
@@ -42,7 +49,7 @@ Examples
 ========
 
 See the `how-to <http://multitables.readthedocs.io/en/latest/howto.html>`_ for more in-depth documentation, and the
-`unit tests <https://github.com/ghcollin/multitables/blob/master/multitables_test.py>`_ for complete examples.
+`unit tests <https://github.com/ghcollin/multitables/blob/master/multitables_test_v2.py>`_ for complete examples.
 
 Documentation
 =============
