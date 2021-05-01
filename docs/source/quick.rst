@@ -21,9 +21,8 @@ or `clone the repository <https://github.com/ghcollin/multitables>`_ and run
 
     python setup.py install
 
-``multitables`` depends on ``tables`` (the pytables package) and
-``numpy``. The package is compatible with the latest versions of python
-2 and 3.
+``multitables`` depends on ``tables`` (the pytables package), ``numpy``, ``msgpack``, and ``wrapt``.
+The package is compatible with the latest versions of Python 3, as pytables no longer supports Python 2.
 
 Quick start: Streaming
 ======================

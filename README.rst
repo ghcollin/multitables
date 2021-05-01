@@ -9,6 +9,8 @@ With the ``Streamer`` interface, there is **no guarantee** on the ordering of th
 concurrent nature of the library. They are returned as they become available. On-disk ordering can be forced using
 the ``ordered`` option, which may result in a performance penalty.
 
+The ``Reader`` interface allows random access, which gives fine grained control over the ordering of requests.
+
 `Performance gains <http://multitables.readthedocs.io/en/latest/benchmark.html>`_ of at
 least 2x can be achieved when reading from an SSD.
 
@@ -17,7 +19,7 @@ New with version 2
 
 Random access reads are now possible through asynchronous requests.
 The results of these requests are placed in shared memory.
-See the unit tests for examples of the new interface.
+See the how-to and unit tests for examples of the new interface.
 
 Licence
 =======
@@ -32,8 +34,8 @@ Installation
 
     pip install multitables
 
-``multitables`` depends on ``tables`` (the pytables package) and ``numpy``.
-The package is compatible with the latest versions of python 2 and 3.
+``multitables`` depends on ``tables`` (the pytables package), ``numpy``, ``msgpack``, and ``wrapt``.
+The package is compatible with the latest versions of Python 3, as pytables no longer supports Python 2.
 
 Quick start: Streaming
 ======================
