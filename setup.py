@@ -2,10 +2,11 @@ from setuptools import setup
 
 setup(
     name='multitables',
-    version='1.1.1',
+    version='2.0.0',
     url='https://github.com/ghcollin/multitables',
     description='High performance parallel reading of HDF5 files using PyTables, multiprocessing, and shared memory.',
     long_description=open("README.rst").read(),
+    long_description_content_type="text/x-rst",
     keywords='tables hdf5 parallel concurrent',
     license='MIT',
     author='ghcollin',
@@ -22,5 +23,5 @@ setup(
         'Topic :: Software Development :: Libraries :: Python Modules'
     ],
     py_modules=['multitables'],
-    requires=['numpy', 'tables', 'msgpack>=0.6.0', 'wrapt']
+    install_requires=['numpy', 'tables', 'msgpack >= 0.6.0', 'wrapt']
 )
