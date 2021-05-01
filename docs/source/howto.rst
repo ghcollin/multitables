@@ -1,7 +1,14 @@
 How To
 ******
 
-All uses of the library start with creating a ``Streamer`` object.
+All uses of the library start with creating a ``Streamer`` object, or a
+``Reader`` object.
+
+Streamer
+********
+
+The ``Streamer`` is designed for reading data from the dataset in approximately
+(or optionally forced) sequential order.
 
 .. code:: python
 
@@ -122,3 +129,140 @@ Concurrent access
 
 Python iterators and generators are not thread safe. The low level
 direct access interface is thread safe.
+
+Reader 
+******
+
+The ``Reader`` is designed for random access, using an interface that is
+as close as possible to *numpy* indexing operations.
+
+.. code:: python
+
+    import multitables
+    reader = multitables.Reader(filename="/path/to/h5/file", **kw_args)
+
+Additional flags to pytables’ ``open_file`` function can be passed
+through the optional keyword arguments.
+
+Dataset and stage 
+=================
+
+The basic workflow is to first open the desired dataset using the internal
+HDF5 path.
+
+.. code:: python
+
+    dataset = reader.get_dataset(path='/internal/h5/path')
+
+Then, a stage must be created to host random access requests. This stage is
+an area of shared memory that is allocated and shared with the background
+reader processes. The result of all requests made with this stage must fit
+inside the allocated memory of the stage.
+
+.. code:: python
+
+    stage = dataset.create_stage(shape=10)
+
+The provided ``shape`` parameter may be the full shape of the stage using
+the datatype of the dataset. Or, the shape may be left incomplete and the
+missing shape dimensions will be filled with the dataset shape. In this
+example, only the first dimension is specified, as so this stage has room
+for 10 rows of the dataset.
+
+Requests
+========
+
+Requests happen through three operations. First, the description of a request
+is made through an indexing operation on the dataset.
+
+.. code:: python
+
+    req = dataset['col_A'][30:35]
+
+Next, a future is made and a background task scheduled to fetch the requested
+data and load it into the provided stage.
+
+.. code:: python
+
+    future = reader.request(req, stage)
+
+Finally, the future is waited upon using a get operation. Four types of
+get operations are provided. The first and simplest blocks on the task and
+returns a copy of the data.
+
+.. code:: python
+
+    data = request.get()
+
+In the next type, a copy is avoided by providing a function that will be
+run with the data as the only argument. This get operation also blocks
+until the data is available and the provided function finishes.
+
+.. code:: python
+
+    def do_something(data):
+        pass
+    data = request.get_direct(do_something)
+
+The remaining two get operations use context managers to control access
+to the shared memory resource without creating a copy. The first is unsafe,
+in that if the resulting reference is not properly disposed of, memory
+errors may result.
+
+.. code:: python
+
+    with future.get_unsafe() as data:
+        do_something(data)
+    data = None # Properly dispose of the reference
+
+The final uses a wrapper object on the returned data, so that if the
+reference is not properly disposed of, an exception will be safely called.
+
+.. code:: python
+
+    with future.get_unsafe() as data:
+        do_something(data)
+    data = None # Properly dispose of the reference
+
+Cleaning up 
+===========
+
+Once finished, call the ``close`` method on the reader object.
+
+.. code:: python
+
+    reader.close(wait=True)
+
+If the provided ``wait`` parameter is ``True``, the ``close`` call will
+block until all background threads and processes have cleanly shut down.
+
+Concurrent access pattern 
+=========================
+
+The following is an example of launching and reading requests in separate
+threads. This uses the ``create_stage_pool`` method, that creates ``N_stages``
+separate stages and places them in a rotating pool.
+
+The ``RequestPool`` object is then used to create a queue of pending futures
+that returns futures in the same order that they are inserted.
+
+.. code:: python
+
+    N_stages = 10
+
+    stage_pool = dataset.create_stage_pool(1, N_stages)
+
+    reqs = multitables.RequestPool()
+
+    table_len = dataset.shape[0]
+    def loader():
+        for idx in range(table_len):
+            reqs.add(reader.request(dataset[idx:idx+1], stage_pool))
+
+    loader_thread = threading.Thread(target=loader)
+    loader_thread.start()
+
+    for idx in range(table_len):
+        do_something(reqs.next().get())
+
+    reader.close(wait=True)

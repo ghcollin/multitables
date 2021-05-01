@@ -382,6 +382,8 @@ class Reader:
         Close the reader. After this point, no more requests can be made. Pending requests will still be fulfilled.
         Any attempt to made additional requests will raise an exception. Once all requests have been fulfilled, the
         background processes and threads will be shut down.
+        
+        :param wait: If True, block until all background threads/processes have shut down. False by default.
         """
         self._core.close(wait)
 

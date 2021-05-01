@@ -25,8 +25,8 @@ or `clone the repository <https://github.com/ghcollin/multitables>`_ and run
 ``numpy``. The package is compatible with the latest versions of python
 2 and 3.
 
-Quick start
-===========
+Quick start: Streaming
+======================
 
 .. code:: python
 
@@ -34,6 +34,52 @@ Quick start
     stream = multitables.Streamer(filename='/path/to/h5/file')
     for row in stream.get_generator(path='/internal/h5/path'):
         do_something(row)
+
+Quick start: Random access
+==========================
+
+.. code:: python
+
+    import multitables
+    reader = multitables.Reader(filename='/path/to/h5/file')
+
+    dataset = reader.get_dataset(path='/internal/h5/path')
+    stage = dataset.create_stage(10) # Size of the shared
+                                        # memory stage in rows
+
+    req = dataset['col_A'][30:35] # Create a request as you
+                                     # would index normally.
+
+    future = reader.request(req, stage) # Schedule the request
+    with future.get_unsafe() as data:
+        do_something(data)
+    data = None # Always set data to None after get_unsafe to
+                # prevent a dangling reference
+
+    # ... or use a safer proxy method
+
+    req = dataset.col('col_A')[30:35,...,:100]
+
+    future = reader.request(req, stage)
+    with future.get_proxy() as data:
+        do_something(data)
+
+    # ... or provide a function to run on the data
+
+    req = dataset.read_sorted('col_C', checkCSI=True, start=200, stop=300)
+
+    future = reader.request(req, stage)
+    future.get_direct(do_something)
+
+    # ... or get a copy of the data
+
+    req = dataset['col_A'][30:35,np.arange(500) > 45]
+
+    future = reader.request(req, stage)
+    do_something(future.get())
+
+    # once done, close the reader
+    reader.close(wait=True)
 
 Examples
 ========

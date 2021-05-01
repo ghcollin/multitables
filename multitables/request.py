@@ -58,7 +58,7 @@ class Request:
         If an exception was raised when fielding this request, the exception is re-raised here.
         Use of this context manager can be unsafe, as it yields a direct reference to the shared memory.
         If this reference is not properly managed, it can lead to a dangling pointer that causes an
-        exception when the associated stage is closed. The contents of this danling pointer will also change
+        exception when the associated stage is closed. The contents of this dangling pointer will also change
         when the associated stage is re-used for another request. It is recommended to use a safer access method,
         or immediately delete or set to None the local variable bound to the yielded reference after use.
         """
@@ -75,6 +75,7 @@ class Request:
         fulfilled. Once ready, it called the provided action function with a direct reference to the shared
         memory as an argument. Care should be taken that this direct reference does not leave the scope
         of the function, or else the problems enumerated in the get_unsafe context manager may result.
+
         :param action: A function that takes one argument, which will be supplied as a direct reference
             to the shared memory.
         """
