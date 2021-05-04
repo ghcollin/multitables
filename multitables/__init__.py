@@ -1,6 +1,6 @@
 
 __author__ = "G. H. Collin"
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 from .signals import QueueClosed, QueueClosedException, SubprocessException
 from .shared_mem import SharedMemoryError
